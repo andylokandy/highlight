@@ -1,8 +1,7 @@
-use highlight::{
-    parser::Input,
-    syntax::{query, select_stmt},
-    token::Tokenizer,
-};
+use highlight::parser::Input;
+use highlight::syntax::query;
+use highlight::syntax::select_stmt;
+use highlight::token::Tokenizer;
 
 const CASES: &[&str] = &[
     "",

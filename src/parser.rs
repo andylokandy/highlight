@@ -1,11 +1,10 @@
-use std::fmt::{format, Debug};
+use std::ops::Add;
 
 use smallvec::SmallVec;
 
-use crate::{
-    syntax::{Semantic, Span},
-    token::{Token, TokenKind},
-};
+// use crate::syntax::Span;
+// use crate::token::Token;
+// use crate::token::TokenKind;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Input<'a> {
@@ -14,29 +13,19 @@ pub struct Input<'a> {
 }
 
 #[derive(Debug)]
-pub struct Solution<'a, T, S, E> {
+pub struct Solution<'a, O, S, E> {
     pub consumed: Vec<(Span, S)>,
     pub errors: Vec<(Span, E)>,
     pub rest: Input<'a>,
-    pub value: Option<T>,
+    pub value: Option<O>,
 }
 
 #[derive(Debug)]
-pub struct Solutions<'a, T, S, E>
-where
-    T: Debug,
-    S: Debug,
-    E: Debug,
-{
-    solutions: SmallVec<[Solution<'a, T, S, E>; 1]>,
+pub struct Solutions<'a, O, S, E> {
+    solutions: SmallVec<[Solution<'a, O, S, E>; 1]>,
 }
 
-impl<'a, T, S, E> Solutions<'a, T, S, E>
-where
-    T: Debug,
-    S: Debug,
-    E: Debug,
-{
+impl<'a, O, S, E> Solutions<'a, O, S, E> {
     pub fn new() -> Self {
         Solutions {
             solutions: SmallVec::new(),
@@ -51,7 +40,7 @@ where
         self.solutions.iter().filter(|s| s.value.is_some()).count()
     }
 
-    pub fn push(&mut self, solution: Solution<'a, T, S, E>) {
+    pub fn push(&mut self, solution: Solution<'a, O, S, E>) {
         let existing = self
             .solutions
             .iter_mut()
@@ -68,19 +57,14 @@ where
         }
     }
 
-    pub fn best(&self) -> Option<&Solution<'a, T, S, E>> {
+    pub fn best(&self) -> Option<&Solution<'a, O, S, E>> {
         self.solutions.iter().max_by_key(|s| s.consumed.len())
     }
 }
 
-impl<'a, T, S, E> IntoIterator for Solutions<'a, T, S, E>
-where
-    T: Debug,
-    S: Debug,
-    E: Debug,
-{
-    type Item = Solution<'a, T, S, E>;
-    type IntoIter = smallvec::IntoIter<[Solution<'a, T, S, E>; 1]>;
+impl<'a, O, S, E> IntoIterator for Solutions<'a, O, S, E> {
+    type Item = Solution<'a, O, S, E>;
+    type IntoIter = smallvec::IntoIter<[Solution<'a, O, S, E>; 1]>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.solutions.into_iter()
@@ -92,10 +76,10 @@ pub fn sequence<'a, P1, P2, T1, T2, S, E>(
     parser2: P2,
 ) -> impl Fn(Input<'a>) -> Solutions<'a, (T1, T2), S, E> + Clone
 where
-    T1: Clone + Debug,
-    T2: Clone + Debug,
-    S: Clone + Debug,
-    E: FromParseError + Clone + Debug,
+    T1: Clone,
+    T2: Clone,
+    S: Clone,
+    E: ParseError + Clone,
     P1: Fn(Input<'a>) -> Solutions<'a, T1, S, E> + Clone,
     P2: Fn(Input<'a>) -> Solutions<'a, T2, S, E> + Clone,
 {
@@ -169,16 +153,16 @@ where
     }
 }
 
-pub fn alt<'a, P1, P2, T, S, E>(
+pub fn alt<'a, P1, P2, O, S, E>(
     parser1: P1,
     parser2: P2,
-) -> impl Fn(Input<'a>) -> Solutions<'a, T, S, E> + Clone
+) -> impl Fn(Input<'a>) -> Solutions<'a, O, S, E> + Clone
 where
-    T: Clone + Debug,
-    S: Clone + Debug,
-    E: FromParseError + Clone + Debug,
-    P1: Fn(Input<'a>) -> Solutions<'a, T, S, E> + Clone,
-    P2: Fn(Input<'a>) -> Solutions<'a, T, S, E> + Clone,
+    O: Clone,
+    S: Clone,
+    E: ParseError + Clone,
+    P1: Fn(Input<'a>) -> Solutions<'a, O, S, E> + Clone,
+    P2: Fn(Input<'a>) -> Solutions<'a, O, S, E> + Clone,
 {
     move |input| {
         if input.fast_path {
@@ -208,17 +192,15 @@ where
     }
 }
 
-pub fn map<'a, P, T, U, S, E, F>(
+pub fn map<'a, P, O, U, S, E, F>(
     parser: P,
     f: F,
 ) -> impl Fn(Input<'a>) -> Solutions<'a, U, S, E> + Clone
 where
-    T: Clone + Debug,
-    U: Clone + Debug,
-    S: Debug,
-    E: Debug,
-    P: Fn(Input<'a>) -> Solutions<'a, T, S, E> + Clone,
-    F: Fn(T) -> U + Clone,
+    O: Clone,
+    U: Clone,
+    P: Fn(Input<'a>) -> Solutions<'a, O, S, E> + Clone,
+    F: Fn(O) -> U + Clone,
 {
     move |input| {
         let solutions = parser(input);
@@ -243,14 +225,14 @@ where
     }
 }
 
-pub fn opt<'a, P, T, S, E>(
+pub fn opt<'a, P, O, S, E>(
     parser: P,
-) -> impl Fn(Input<'a>) -> Solutions<'a, Option<T>, S, E> + Clone
+) -> impl Fn(Input<'a>) -> Solutions<'a, Option<O>, S, E> + Clone
 where
-    T: Clone + Debug,
-    S: Clone + Debug,
-    E: FromParseError + Clone + Debug,
-    P: Fn(Input<'a>) -> Solutions<'a, T, S, E> + Clone,
+    O: Clone,
+    S: Clone,
+    E: ParseError + Clone,
+    P: Fn(Input<'a>) -> Solutions<'a, O, S, E> + Clone,
 {
     move |input| {
         if input.fast_path {
@@ -293,8 +275,8 @@ pub fn match_token<'a, S, E>(
     semantic: S,
 ) -> impl Fn(Input<'a>) -> Solutions<'a, Token, S, E> + Clone
 where
-    S: Clone + Debug,
-    E: FromParseError + Debug,
+    S: Clone,
+    E: ParseError,
 {
     move |input| {
         if input.fast_path {
@@ -371,12 +353,23 @@ where
     }
 }
 
-pub trait FromParseError {
+pub trait ParseError {
     fn match_error(token_kind: TokenKind) -> Self;
     fn missing_error(label: String) -> Self;
 }
 
-fn concat_vecs<T: Clone>(a: &Vec<T>, mut b: Vec<T>) -> Vec<T> {
+pub enum ErrorKind {
+
+}
+
+pub trait Token {
+    type Span: Add;
+    type TokenKind: Copy + PartialEq;
+
+    fn kind(&self) -> Self::TokenKind;
+}
+
+fn concat_vecs<O: Clone>(a: &Vec<O>, mut b: Vec<O>) -> Vec<O> {
     b.splice(0..0, a.iter().cloned());
     b
 }

@@ -2,10 +2,15 @@ use std::ops::Range;
 
 use crossterm::style::Color;
 
-use crate::{
-    parser::{alt, map, match_token, opt, sequence, FromParseError, Input, Solutions},
-    token::*,
-};
+use crate::parser::alt;
+use crate::parser::map;
+use crate::parser::match_token;
+use crate::parser::opt;
+use crate::parser::sequence;
+use crate::parser::ParseError;
+use crate::parser::Input;
+use crate::parser::Solutions;
+use crate::token::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
@@ -80,7 +85,7 @@ pub enum Error {
     Missing(String),
 }
 
-impl FromParseError for Error {
+impl ParseError for Error {
     fn match_error(kind: TokenKind) -> Self {
         Error::ExpectToken(kind)
     }

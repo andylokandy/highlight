@@ -1,7 +1,8 @@
-use logos::{Lexer, Logos};
+use logos::Lexer;
+use logos::Logos;
+pub use TokenKind::*;
 
 use crate::syntax::Span;
-pub use TokenKind::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Token<'a> {

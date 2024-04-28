@@ -1,0 +1,20 @@
+[package]
+name = "highlight"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+crossterm = "0.27.0"
+logos = "0.14.0"
+rustyline = "14.0.0"
+rustyline-derive = "0.10.0"
+smallvec = "1.13.2"
+
+[dev-dependencies]
+divan = "0.1.14"
+
+[[bench]]
+name = "main"
+harness = false

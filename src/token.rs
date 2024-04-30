@@ -2,7 +2,7 @@ use logos::Lexer;
 use logos::Logos;
 pub use TokenKind::*;
 
-use crate::syntax::Span;
+use crate::parser::Span;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Token<'a> {

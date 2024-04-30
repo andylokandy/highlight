@@ -1,143 +1,91 @@
-use std::ops::Range;
-
-use crossterm::style::Color;
+use crossterm::style::Color as TermColor;
 
 use crate::parser::alt;
 use crate::parser::map;
 use crate::parser::match_token;
 use crate::parser::opt;
 use crate::parser::sequence;
-use crate::parser::ParseError;
-use crate::parser::Input;
-use crate::parser::Solutions;
+use crate::parser::ErrorKind;
+use crate::parser::Span;
 use crate::token::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl Span {
-    pub fn merge(&self, other: Span) -> Span {
-        Span {
-            start: self.start.min(other.start),
-            end: self.end.max(other.end),
-        }
-    }
-}
-
-impl From<Range<usize>> for Span {
-    fn from(range: Range<usize>) -> Self {
-        Span {
-            start: range.start,
-            end: range.end,
-        }
-    }
-}
-
-impl From<Span> for Range<usize> {
-    fn from(span: Span) -> Self {
-        span.start..span.end
-    }
-}
+type Input<'a> = crate::parser::Input<Token<'a>>;
+type IResult<'a, O> = crate::parser::IResult<Token<'a>, O, Color, ErrorKind<TokenKind>>;
 
 #[derive(Debug, Clone)]
-pub enum Semantic {
+pub enum Color {
     Keyword,
     Ident,
     Table,
     Literal,
-    Operator,
     Bracket,
     Error(String),
 }
 
-impl Semantic {
-    pub fn backgrourd_color(&self) -> Color {
+impl Color {
+    pub fn backgrourd_color(&self) -> TermColor {
         match self {
-            Semantic::Keyword => Color::Blue,
-            Semantic::Ident => Color::Green,
-            Semantic::Table => Color::DarkYellow,
-            Semantic::Literal => Color::Yellow,
-            Semantic::Operator => Color::DarkCyan,
-            Semantic::Bracket => Color::Cyan,
-            Semantic::Error(_) => Color::DarkRed,
+            Color::Keyword => TermColor::Blue,
+            Color::Ident => TermColor::Green,
+            Color::Table => TermColor::DarkYellow,
+            Color::Literal => TermColor::Yellow,
+            Color::Bracket => TermColor::Cyan,
+            Color::Error(_) => TermColor::DarkRed,
         }
     }
 
-    pub fn foreground_color(&self) -> Color {
+    pub fn foreground_color(&self) -> TermColor {
         match self {
-            Semantic::Keyword => Color::Black,
-            Semantic::Ident => Color::Black,
-            Semantic::Table => Color::Black,
-            Semantic::Literal => Color::Black,
-            Semantic::Operator => Color::Black,
-            Semantic::Bracket => Color::Black,
-            Semantic::Error(_) => Color::White,
+            Color::Keyword => TermColor::Black,
+            Color::Ident => TermColor::Black,
+            Color::Table => TermColor::Black,
+            Color::Literal => TermColor::Black,
+            Color::Bracket => TermColor::Black,
+            Color::Error(_) => TermColor::White,
         }
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum Error {
-    ExpectToken(TokenKind),
-    Missing(String),
-}
+impl<'a> crate::parser::Token for Token<'a> {
+    type TokenKind = TokenKind;
+    type TokenStream = &'a [Token<'a>];
 
-impl ParseError for Error {
-    fn match_error(kind: TokenKind) -> Self {
-        Error::ExpectToken(kind)
+    fn span(&self) -> Span {
+        self.span
     }
 
-    fn missing_error(label: String) -> Self {
-        Error::Missing(label)
+    fn kind(&self) -> Self::TokenKind {
+        self.kind
     }
 }
 
-pub fn query(text: &str) -> Vec<(Span, Semantic)> {
+pub fn query(text: &str) -> Vec<(Span, Color)> {
     let tokens = Tokenizer::new(text).collect::<Vec<_>>();
+    let tokens = tokens.as_slice();
 
-    let input = Input {
-        tokens: &tokens,
-        fast_path: true,
-    };
+    let input = Input::fast_path(tokens);
 
     let fast_res = select_stmt(input);
 
     dbg!(&fast_res);
 
-    let input = Input {
-        tokens: &tokens,
-        fast_path: false,
-    };
+    let input = Input::recovery_path(tokens);
     let res = select_stmt(input);
 
     dbg!(&res);
 
-    assert_eq!(
-        fast_res
-            .best()
-            .as_ref()
-            .and_then(|solution| solution.value.clone()),
-        res.best()
-            .as_ref()
-            .and_then(|solution| solution.value.clone())
-    );
+    assert_eq!(fast_res.best().value, res.best().value);
 
-    if let Some(best) = res.best() {
-        best.consumed
-            .iter()
-            .map(|(span, semantic)| (*span, semantic.clone()))
-            .chain(
-                best.errors
-                    .iter()
-                    .map(|(span, err)| (*span, Semantic::Error(format!("{err:?}")))),
-            )
-            .collect()
-    } else {
-        vec![]
-    }
+    let best = res.best();
+    best.consumed
+        .iter()
+        .map(|(span, semantic)| (*span, semantic.clone()))
+        .chain(
+            best.errors
+                .iter()
+                .map(|(span, err)| (*span, Color::Error(format!("{err:?}")))),
+        )
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -152,23 +100,19 @@ pub enum Expr {
     FuncCall(String, i64),
 }
 
-pub fn select_stmt(i: Input) -> Solutions<SelectStmt, Semantic, Error> {
-    let select = match_token(SELECT, Semantic::Keyword);
-    let ident = match_token(Ident, Semantic::Ident);
-    let from = match_token(FROM, Semantic::Keyword);
-    let table_ident = match_token(Ident, Semantic::Table);
-    let semi = match_token(Semicolon, Semantic::Bracket);
-    let eoi = match_token(EOI, Semantic::Bracket);
+pub fn select_stmt(i: Input) -> IResult<SelectStmt> {
+    let select = match_keyword(SELECT);
+    let ident = |i| match_token(Ident, Color::Ident)(i);
+    let from = match_keyword(FROM);
+    let semi = match_bracket(Semicolon);
+    let eoi = match_bracket(EOI);
 
-    let lparen = match_token(LParen, Semantic::Bracket);
-    let rparen = match_token(RParen, Semantic::Bracket);
-    let lit_num = match_token(LiteralInteger, Semantic::Literal);
+    let lparen = match_bracket(LParen);
+    let rparen = match_bracket(RParen);
+    let lit_num = match_token(LiteralInteger, Color::Literal);
     let func_call = map(
-        sequence(
-            match_token(Ident, Semantic::Ident),
-            sequence(lparen, sequence(lit_num, rparen)),
-        ),
-        |(name, (_, (lit, _)))| {
+        sequence((ident, lparen, lit_num, rparen)),
+        |(name, _, lit, _)| {
             Expr::FuncCall(name.text().to_string(), lit.text().parse::<i64>().unwrap())
         },
     );
@@ -176,22 +120,31 @@ pub fn select_stmt(i: Input) -> Solutions<SelectStmt, Semantic, Error> {
     let expr_ident = map(ident, |ident| Expr::Ident(ident.text().to_string()));
 
     map(
-        sequence(
+        sequence((
             select,
-            sequence(
-                alt(func_call, expr_ident),
-                // func_call,
-                sequence(opt(sequence(from, table_ident)), sequence(semi, eoi)),
-                // sequence(semi, eoi),
-            ),
-        ),
-        // |_| SelectStmt {
-        //     expr: Expr::Ident("".to_string()),
-        //     table: None,
-        // },
-        |(_, (expr, (opt_from, _)))| SelectStmt {
-            expr,
-            table: opt_from.map(|(_, table)| table.text().to_string()),
+            opt(sequence((from, table_ident))),
+            alt(func_call, expr_ident),
+            sequence((
+                match_token(Semicolon, Color::Bracket),
+                match_token(Semicolon, Color::Bracket),
+            )),
+            eoi,
+        )),
+        |_| SelectStmt {
+            expr: Expr::Ident("".to_string()),
+            table: None,
         },
     )(i)
+}
+
+pub fn table_ident(i: Input) -> IResult<Token> {
+    match_token(Ident, Color::Table)(i)
+}
+
+pub fn match_keyword(token_kind: TokenKind) -> impl Fn(Input) -> IResult<Token> {
+    move |i| crate::parser::match_token(token_kind, Color::Keyword)(i)
+}
+
+pub fn match_bracket(token_kind: TokenKind) -> impl Fn(Input) -> IResult<Token> {
+    move |i| crate::parser::match_token(token_kind, Color::Keyword)(i)
 }
